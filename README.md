@@ -99,6 +99,10 @@ The project supports two public-sharing paths:
 - `Streamlit Community Cloud` for a durable free-tier demo using `RAG_RUNTIME=lite`
 - a password-protected local tunnel for short-lived private demos from your own machine
 
+Live Streamlit deployment:
+
+- `https://rag-for-technical-documents-ad2b7s6o2njvumzteywaca.streamlit.app/`
+
 If you need the short-lived local demo path:
 
 ```bash
