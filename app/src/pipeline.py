@@ -1,4 +1,4 @@
-"""Minimal RAG pipeline for the first technical-documents MVP."""
+"""RAG pipeline for technical-document question answering."""
 
 from __future__ import annotations
 

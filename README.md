@@ -1,66 +1,45 @@
-# 01 - RAG for Technical Documents
+# RAG for Technical Documents
 
-GitHub URL: `https://github.com/msa-1988/rag-for-technical-documents`
+Repository: `https://github.com/msa-1988/rag-for-technical-documents`
 
-## Goal
+## Overview
 
-Build a compact `RAG` application that reads public research PDFs and answers questions with grounded citations.
+This project is a local-first retrieval-augmented generation application for public research papers. It indexes a PDF corpus, retrieves relevant evidence with a hybrid search strategy, and generates grounded answers with visible citations.
 
-The current demo corpus is a public `AI music generation` paper set.
+The current demo corpus is a public `AI music generation` paper set, but the application is designed for any small technical-document collection.
 
-## Description
+## Features
 
-This project demonstrates:
-- local-first RAG with `Ollama`
-- GPU-backed inference
-- hybrid retrieval over technical papers
-- grounded answers with visible evidence
-- a simple Streamlit interface for exploration and demos
+- local inference with `Ollama`
+- GPU-backed chat generation
+- `ChromaDB` vector search
+- keyword fallback for stronger exact-entity retrieval
+- source diversity limits to improve comparison answers
+- citation-aware answers with inspectable context
+- Streamlit interface for interactive querying
 
-It is designed to be:
-- public and safe to share
-- independent from paid APIs
-- easy to run locally
-- useful as a learning and interview project
+## Architecture
 
-## Utilisation
+1. PDFs are loaded from `data/input/`
+2. pages are split into overlapping chunks
+3. chunks are embedded with `nomic-embed-text`
+4. embeddings are stored in `ChromaDB`
+5. chunk text is exported for lightweight keyword retrieval
+6. vector and keyword hits are merged into a grounded context set
+7. `phi3:mini` generates the final answer with citations
 
-The app lets you:
-- index a small PDF collection from `data/input/`
-- ask natural-language questions
-- inspect answer citations
-- inspect retrieved context
-- compare model papers and survey papers in one place
-
-Typical usage:
-
-1. put public PDFs into `data/input/`
-2. build or refresh the index
-3. ask technical questions
-4. review the answer, sources, and retrieved context
-5. stop the app when you are done
-
-## Stack
+## Tech Stack
 
 - `Python`
 - `Streamlit`
 - `LangChain`
 - `Ollama`
-- `Local GPU inference`
-- `Local open LLM`
 - `ChromaDB`
 - `PyPDF`
 
-## Retrieval Design
+## Usage
 
-This version uses:
-- semantic retrieval from `ChromaDB`
-- lightweight keyword retrieval from exported chunks
-- source diversity limits so one paper does not dominate the answer
-
-That hybrid design was added after real testing showed that exact model-name comparison questions needed stronger lexical support.
-
-## Safe Local Run
+### Local Run
 
 ```bash
 python3 -m venv .venv
@@ -73,89 +52,39 @@ ollama pull nomic-embed-text
 ```
 
 Then:
-- make sure Ollama is installed and running locally
-- use the default local chat model `phi3:mini` or change it in `.env`
-- put PDFs into `data/input/`
-- click `Build / Refresh Index`
-- ask real questions from the paper set
 
-## Secure Public Demo
+1. place public PDFs in `data/input/`
+2. open `http://localhost:8501`
+3. click `Build / Refresh Index`
+4. ask questions about the indexed papers
+5. inspect the answer, sources, and retrieved context
 
-This repo is `localhost-only` by default.
+### Validation
 
-If you need a temporary public demo:
+```bash
+python3 scripts/smoke_test_pipeline.py
+```
 
-1. set a real `APP_ACCESS_PASSWORD` in `.env`
-2. keep the app bound to `127.0.0.1`
-3. start the guarded tunnel script:
+## Public Demo
+
+The application is configured for localhost by default. If you need a temporary public demo, set a real `APP_ACCESS_PASSWORD` in `.env` and run:
 
 ```bash
 ./scripts/start_secure_public_demo.sh
 ```
 
-That script refuses to start a public tunnel unless a password is configured.
+This keeps the app password-protected and only exposes it through a temporary tunnel for the duration of the demo.
 
-## Security Notes
+## Repository Layout
 
-- no personal PDFs are included in the repository
+- `app/`: Streamlit app and pipeline code
+- `data/input/`: local PDF input folder, not tracked in Git
+- `scripts/`: runtime, validation, and demo helpers
+- `.streamlit/config.toml`: safe local server defaults
+
+## Security
+
+- the app binds to `127.0.0.1` by default
 - `data/input/` is git-ignored
-- the app binds to `localhost` by default via `.streamlit/config.toml`
-- public sharing should be temporary and password-protected
-- stop any demo tunnel immediately after use
-
-## Repo Structure
-
-- `docs/`
-  - `PROJECT_PLAN.md`
-  - `INPUT_OUTPUT.md`
-  - `LEARNING_BASICS.md`
-  - `ONE_DAY_EXECUTION.md`
-  - `STEP_BY_STEP.md`
-  - `LOCAL_OLLAMA_SETUP.md`
-  - `TOPIC_MUSIC_GENERATION.md`
-  - `PIPELINE_INTERVIEW_GUIDE.md`
-  - `PUBLIC_TUNNEL_DEPLOYMENT.md`
-  - `SECURITY_HARDENING.md`
-- `app/`
-  - `streamlit_app.py`
-  - `src/`
-- `data/input/`
-- `data/output/`
-- `scripts/`
-  - `check_ollama_gpu.sh`
-  - `smoke_test_pipeline.py`
-  - `run_safe_local.sh`
-  - `start_secure_public_demo.sh`
-- `requirements.txt`
-- `.env.example`
-- `.gitignore`
-
-## Validation Commands
-
-```bash
-./scripts/check_ollama_gpu.sh
-python3 scripts/smoke_test_pipeline.py
-```
-
-## Definition of Done
-
-The project is good enough to publish when:
-- the app answers questions using public PDFs
-- the answer shows source chunks or citations
-- the README explains architecture and setup
-- the repo has screenshots or demo output
-- the repo is pushed to GitHub
-- any public demo is temporary and password-protected
-
-## Next Step
-
-Read the files in `docs/` in this order:
-
-1. `PROJECT_PLAN.md`
-2. `LEARNING_BASICS.md`
-3. `INPUT_OUTPUT.md`
-4. `ONE_DAY_EXECUTION.md`
-5. `STEP_BY_STEP.md`
-6. `LOCAL_OLLAMA_SETUP.md`
-7. `PIPELINE_INTERVIEW_GUIDE.md`
-8. `SECURITY_HARDENING.md`
+- no private or personal documents are included in the repository
+- public sharing is opt-in and password-protected
