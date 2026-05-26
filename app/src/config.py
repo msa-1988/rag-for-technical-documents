@@ -24,7 +24,7 @@ MAX_CHUNKS_PER_SOURCE = 2
 EMBED_BATCH_SIZE = 32
 LITE_CONTEXT_CHAR_LIMIT = 3200
 
-RAG_RUNTIME = os.getenv("RAG_RUNTIME", "ollama").strip().lower()
+RAG_RUNTIME = os.getenv("RAG_RUNTIME", "lite").strip().lower()
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL", "phi3:mini")
 OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")

@@ -104,15 +104,6 @@ class OllamaEmbeddings:
             embeddings.extend(self._embed(batch))
         return embeddings
 
-
-def _require_chroma() -> Any:
-    if Chroma is None:
-        raise RuntimeError(
-            "Chroma is not available in the current runtime. "
-            "Use `RAG_RUNTIME=ollama` for the vector-store path."
-        )
-    return Chroma
-
     def embed_query(self, text: str) -> list[float]:
         return self._embed([text])[0]
 
@@ -143,6 +134,15 @@ def _require_chroma() -> Any:
                 f"Make sure `{self.model}` is available locally."
             )
         return embeddings
+
+
+def _require_chroma() -> Any:
+    if Chroma is None:
+        raise RuntimeError(
+            "Chroma is not available in the current runtime. "
+            "Use `RAG_RUNTIME=ollama` for the vector-store path."
+        )
+    return Chroma
 
 
 def _embedding_client() -> OllamaEmbeddings:

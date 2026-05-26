@@ -19,6 +19,8 @@ set -a
 source .env
 set +a
 
+export RAG_RUNTIME="${RAG_RUNTIME:-ollama}"
+
 if [[ -z "${APP_ACCESS_PASSWORD:-}" || "${APP_ACCESS_PASSWORD}" == "change-this-before-public-sharing" ]]; then
   echo "Refusing to start a public demo without a real APP_ACCESS_PASSWORD in .env."
   exit 1
