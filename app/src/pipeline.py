@@ -6,12 +6,17 @@ import json
 import re
 import shutil
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
+import joblib
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import requests
+from scipy.sparse import load_npz, save_npz
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import linear_kernel
 
 try:
     from langchain_chroma import Chroma
@@ -19,22 +24,28 @@ except ImportError:
     from langchain_community.vectorstores import Chroma
 
 from .config import (
+    CHUNK_EXPORT_PATH,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
-    CHUNK_EXPORT_PATH,
+    DEMO_AUTO_FETCH,
     EMBED_BATCH_SIZE,
     INDEX_MANIFEST,
     INPUT_DIR,
     KEYWORD_TOP_K,
+    LITE_CONTEXT_CHAR_LIMIT,
     MAX_CHUNKS_PER_SOURCE,
     OLLAMA_BASE_URL,
     OLLAMA_CHAT_MODEL,
     OLLAMA_EMBEDDING_MODEL,
     OUTPUT_DIR,
     PROJECT_ROOT,
+    RAG_RUNTIME,
+    TFIDF_MATRIX_PATH,
+    TFIDF_VECTORIZER_PATH,
     TOP_K,
     VECTOR_DB_DIR,
 )
+from .demo_corpus import download_demo_corpus
 
 
 load_dotenv(PROJECT_ROOT / ".env")
@@ -55,7 +66,23 @@ class ChunkRecord:
     content: str
 
 
+@dataclass
+class LiteResources:
+    vectorizer: TfidfVectorizer
+    matrix: object
+    chunks: list[ChunkRecord]
+
+
+def is_lite_runtime() -> bool:
+    return RAG_RUNTIME == "lite"
+
+
 def list_pdf_paths() -> list[Path]:
+    pdf_paths = sorted(INPUT_DIR.rglob("*.pdf"))
+    if pdf_paths or not DEMO_AUTO_FETCH:
+        return pdf_paths
+
+    download_demo_corpus(force=False)
     return sorted(INPUT_DIR.rglob("*.pdf"))
 
 
@@ -199,18 +226,31 @@ def _read_chunk_export() -> list[ChunkRecord]:
     return records
 
 
+def _runtime_artifacts_ready() -> bool:
+    if is_lite_runtime():
+        return (
+            CHUNK_EXPORT_PATH.exists()
+            and TFIDF_VECTORIZER_PATH.exists()
+            and TFIDF_MATRIX_PATH.exists()
+        )
+    return CHUNK_EXPORT_PATH.exists() and VECTOR_DB_DIR.exists()
+
+
 def index_is_fresh(pdf_paths: list[Path] | None = None) -> bool:
     pdf_paths = pdf_paths or list_pdf_paths()
     manifest = _read_manifest()
-    if not manifest or not VECTOR_DB_DIR.exists():
+    if not manifest or not _runtime_artifacts_ready():
         return False
-    return manifest.get("inputs") == _input_signature(pdf_paths)
+    return (
+        manifest.get("inputs") == _input_signature(pdf_paths)
+        and manifest.get("runtime") == RAG_RUNTIME
+    )
 
 
 def load_documents() -> list:
     pdf_paths = list_pdf_paths()
     if not pdf_paths:
-        raise RuntimeError("No PDFs found in data/input. Add 2-4 PDFs first.")
+        raise RuntimeError("No PDFs found in data/input. Add PDFs or enable demo auto-fetch.")
 
     documents = []
     for path in pdf_paths:
@@ -239,14 +279,38 @@ def _load_existing_vector_store() -> Chroma:
     )
 
 
-def build_vector_store(force_rebuild: bool = False) -> tuple[Chroma, IndexStats]:
+@lru_cache(maxsize=1)
+def _load_tfidf_resources(cache_token: str) -> LiteResources:
+    del cache_token
+    return LiteResources(
+        vectorizer=joblib.load(TFIDF_VECTORIZER_PATH),
+        matrix=load_npz(TFIDF_MATRIX_PATH),
+        chunks=_read_chunk_export(),
+    )
+
+
+def _tfidf_cache_token() -> str:
+    manifest = _read_manifest() or {}
+    return json.dumps(
+        {
+            "runtime": manifest.get("runtime"),
+            "inputs": manifest.get("inputs", []),
+            "chunk_count": manifest.get("chunk_count", 0),
+        },
+        sort_keys=True,
+    )
+
+
+def build_vector_store(force_rebuild: bool = False) -> tuple[Chroma | None, IndexStats]:
     pdf_paths = list_pdf_paths()
     if not pdf_paths:
-        raise RuntimeError("No PDFs found in data/input. Add 2-4 PDFs first.")
+        raise RuntimeError(
+            "No PDFs found in data/input. Add PDFs locally or let the demo corpus download."
+        )
 
     if not force_rebuild and index_is_fresh(pdf_paths):
         manifest = _read_manifest() or {}
-        vector_store = _load_existing_vector_store()
+        vector_store = None if is_lite_runtime() else _load_existing_vector_store()
         stats = IndexStats(
             pdf_count=manifest.get("pdf_count", len(pdf_paths)),
             page_count=manifest.get("page_count", 0),
@@ -257,6 +321,33 @@ def build_vector_store(force_rebuild: bool = False) -> tuple[Chroma, IndexStats]
 
     documents = load_documents()
     chunks = split_documents(documents)
+    stats = IndexStats(
+        pdf_count=len(pdf_paths),
+        page_count=len(documents),
+        chunk_count=len(chunks),
+        rebuilt=True,
+    )
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    _write_manifest(
+        {
+            "runtime": RAG_RUNTIME,
+            "inputs": _input_signature(pdf_paths),
+            "pdf_count": len(pdf_paths),
+            "page_count": len(documents),
+            "chunk_count": len(chunks),
+        }
+    )
+    _write_chunk_export(chunks)
+
+    if is_lite_runtime():
+        texts = [chunk.page_content for chunk in chunks]
+        vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
+        matrix = vectorizer.fit_transform(texts)
+        joblib.dump(vectorizer, TFIDF_VECTORIZER_PATH)
+        save_npz(TFIDF_MATRIX_PATH, matrix)
+        _load_tfidf_resources.cache_clear()
+        return None, stats
 
     if VECTOR_DB_DIR.exists():
         shutil.rmtree(VECTOR_DB_DIR)
@@ -267,46 +358,20 @@ def build_vector_store(force_rebuild: bool = False) -> tuple[Chroma, IndexStats]
         collection_name="technical_documents",
         persist_directory=str(VECTOR_DB_DIR),
     )
-
-    _write_manifest(
-        {
-            "inputs": _input_signature(pdf_paths),
-            "pdf_count": len(pdf_paths),
-            "page_count": len(documents),
-            "chunk_count": len(chunks),
-        }
-    )
-    _write_chunk_export(chunks)
-
-    return vector_store, IndexStats(
-        pdf_count=len(pdf_paths),
-        page_count=len(documents),
-        chunk_count=len(chunks),
-        rebuilt=True,
-    )
+    return vector_store, stats
 
 
-def get_index_status() -> dict[str, int | bool]:
+def get_index_status() -> dict[str, int | bool | str]:
     pdf_paths = list_pdf_paths()
     manifest = _read_manifest() or {}
     return {
         "pdf_count": len(pdf_paths),
         "indexed": index_is_fresh(pdf_paths),
-        "vector_store_ready": VECTOR_DB_DIR.exists(),
+        "vector_store_ready": _runtime_artifacts_ready(),
         "page_count": manifest.get("page_count", 0),
         "chunk_count": manifest.get("chunk_count", 0),
+        "runtime": RAG_RUNTIME,
     }
-
-
-def _format_context(retrieved_docs: list) -> str:
-    context_blocks = []
-    for idx, doc in enumerate(retrieved_docs, start=1):
-        source = doc.metadata.get("source", "unknown")
-        page = int(doc.metadata.get("page", 0)) + 1
-        context_blocks.append(
-            f"[{idx}] Source: {source}, page {page}\n{doc.page_content.strip()}"
-        )
-    return "\n\n".join(context_blocks)
 
 
 def _question_terms(question: str) -> list[str]:
@@ -346,7 +411,7 @@ def _question_terms(question: str) -> list[str]:
         "difference",
         "differ",
     }
-    terms = re.findall(r"[A-Za-z0-9][A-Za-z0-9\-:+.]*", question.lower())
+    terms = re.findall(r"[A-Za-z0-9][A-Za-z0-9:+.-]*", question.lower())
     return [term for term in terms if len(term) > 2 and term not in stopwords]
 
 
@@ -357,8 +422,12 @@ def _keyword_score(content: str, question_terms: list[str]) -> int:
     return (exact_hits * 3) + unique_hits
 
 
-def _keyword_retrieve(question: str, limit: int) -> list[dict]:
-    question_terms = _question_terms(question)
+def _keyword_retrieve(
+    question: str,
+    limit: int,
+    terms_override: list[str] | None = None,
+) -> list[dict]:
+    question_terms = terms_override or _question_terms(question)
     if not question_terms:
         return []
 
@@ -383,16 +452,37 @@ def _keyword_retrieve(question: str, limit: int) -> list[dict]:
     return scored_chunks[:limit]
 
 
-def _doc_key(source: str, page: int, snippet: str) -> tuple[str, int, str]:
-    return (source, page, snippet[:180])
+def _tfidf_retrieve(question: str, limit: int) -> list[dict]:
+    resources = _load_tfidf_resources(_tfidf_cache_token())
+    query_vector = resources.vectorizer.transform([question])
+    scores = linear_kernel(resources.matrix, query_vector).ravel()
+
+    if scores.size == 0:
+        return []
+
+    retrieved = []
+    for index in scores.argsort()[::-1]:
+        score = float(scores[index])
+        if score <= 0:
+            break
+        chunk = resources.chunks[index]
+        retrieved.append(
+            {
+                "source": chunk.source,
+                "page": chunk.page,
+                "snippet": chunk.content.strip(),
+                "retrieval": "tfidf",
+                "score": score,
+            }
+        )
+        if len(retrieved) >= limit:
+            break
+
+    return retrieved
 
 
-def _merge_retrieved_content(vector_docs: list, keyword_docs: list[dict]) -> list[dict]:
-    merged = []
-    seen = set()
-    per_source = {}
-
-    vector_items = [
+def _vector_docs_to_items(vector_docs: list) -> list[dict]:
+    return [
         {
             "source": doc.metadata.get("source", "unknown"),
             "page": int(doc.metadata.get("page", 0)) + 1,
@@ -401,6 +491,17 @@ def _merge_retrieved_content(vector_docs: list, keyword_docs: list[dict]) -> lis
         }
         for doc in vector_docs
     ]
+
+
+def _doc_key(source: str, page: int, snippet: str) -> tuple[str, int, str]:
+    return (source, page, snippet[:180])
+
+
+def _merge_retrieved_content(vector_items: list[dict], keyword_docs: list[dict]) -> list[dict]:
+    merged = []
+    seen = set()
+    per_source = {}
+
     keyword_items = [
         {
             "source": doc["source"],
@@ -411,7 +512,7 @@ def _merge_retrieved_content(vector_docs: list, keyword_docs: list[dict]) -> lis
         for doc in keyword_docs
     ]
 
-    queues = [keyword_items, vector_items]
+    queues = [keyword_items, list(vector_items)]
     while len(merged) < TOP_K and any(queues):
         for queue in queues:
             if not queue:
@@ -441,12 +542,223 @@ def _format_hybrid_context(retrieved_chunks: list[dict]) -> str:
     return "\n\n".join(context_blocks)
 
 
+def _generation_chunks(retrieved_chunks: list[dict]) -> list[dict]:
+    if not is_lite_runtime():
+        return retrieved_chunks
+
+    trimmed = []
+    total_chars = 0
+    for chunk in retrieved_chunks:
+        snippet = chunk["snippet"][:700]
+        estimated = len(snippet) + 80
+        if total_chars + estimated > LITE_CONTEXT_CHAR_LIMIT and trimmed:
+            break
+
+        item = dict(chunk)
+        item["snippet"] = snippet
+        trimmed.append(item)
+        total_chars += estimated
+
+    return trimmed or retrieved_chunks[:3]
+
+
+def _split_sentences(text: str) -> list[str]:
+    return [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+
+
+def _is_comparison_question(question: str) -> bool:
+    lowered = question.lower()
+    comparison_markers = ("compare", "differ", "difference", "versus", "vs", "contrast")
+    return any(marker in lowered for marker in comparison_markers)
+
+
+def _lite_focus_terms(question: str) -> list[str]:
+    lowered = question.lower()
+    focus_terms = []
+
+    if any(token in lowered for token in ("categories", "category", "types", "approaches")):
+        focus_terms.extend(
+            [
+                "autoregressive",
+                "diffusion",
+                "transformer",
+                "gan",
+                "vae",
+                "symbolic",
+                "text-to-music",
+                "latent",
+            ]
+        )
+
+    if any(token in lowered for token in ("controllability", "control", "conditioning")):
+        focus_terms.extend(
+            [
+                "control",
+                "controllable",
+                "conditioning",
+                "conditioned",
+                "guidance",
+                "guided",
+                "attribute",
+                "steer",
+                "text prompt",
+            ]
+        )
+
+    if "architecture" in lowered:
+        focus_terms.extend(
+            [
+                "architecture",
+                "autoregressive",
+                "transformer",
+                "encoder",
+                "decoder",
+                "latent",
+            ]
+        )
+
+    for token in _question_terms(question):
+        if any(char.isdigit() for char in token) or token in {"musiclm", "musicgen", "riffusion"}:
+            focus_terms.append(token)
+
+    return sorted(set(focus_terms))
+
+
+def _sentence_is_noise(sentence: str) -> bool:
+    lowered = sentence.lower()
+    words = sentence.split()
+    blocked_phrases = (
+        "list of web resources",
+        "google search",
+        "bing news",
+        "google scholar",
+        "hacker news",
+        "huggingface",
+        "youtube",
+        "reddit",
+        "github",
+        "keywords:",
+        "table ",
+        "figure ",
+        "appendix",
+        "references",
+        "copyright",
+    )
+    if any(phrase in lowered for phrase in blocked_phrases):
+        return True
+    if lowered.count(",") >= 7:
+        return True
+    if sentence.count("%") >= 2:
+        return True
+    if sentence.count("%") >= 1 and lowered.count("music") >= 4:
+        return True
+    if "http" in lowered or "www." in lowered:
+        return True
+    verbs = (
+        " is ",
+        " are ",
+        " uses ",
+        " use ",
+        " allows ",
+        " allow ",
+        " enables ",
+        " enable ",
+        " means ",
+        " refers to ",
+        " based on ",
+        " generates ",
+        " condition ",
+        " conditioning ",
+        " controls ",
+        " compares ",
+    )
+    has_common_verb = any(verb in f" {lowered} " for verb in verbs)
+    capitalized_tokens = sum(1 for word in words if word[:1].isupper())
+    if not has_common_verb and len(words) >= 10 and (capitalized_tokens >= 4 or any(char.isdigit() for char in sentence)):
+        return True
+    return False
+
+
+def _lite_answer_from_chunks(question: str, retrieved_chunks: list[dict]) -> str:
+    question_terms = _question_terms(question)
+    focus_terms = _lite_focus_terms(question)
+    candidates = []
+    seen_sentences = set()
+
+    for chunk_id, chunk in enumerate(retrieved_chunks, start=1):
+        for sentence in _split_sentences(chunk["snippet"]):
+            normalized = " ".join(sentence.split())
+            if len(normalized) < 50:
+                continue
+            if _sentence_is_noise(normalized):
+                continue
+            sentence_key = normalized.lower()[:180]
+            if sentence_key in seen_sentences:
+                continue
+
+            score = _keyword_score(normalized, question_terms)
+            focus_score = _keyword_score(normalized, focus_terms) if focus_terms else 0
+            if focus_terms and focus_score <= 0:
+                continue
+            if score <= 0 and focus_score <= 0 and question_terms:
+                continue
+
+            seen_sentences.add(sentence_key)
+            candidates.append(
+                {
+                    "sentence": normalized,
+                    "chunk_id": chunk_id,
+                    "source": chunk["source"],
+                    "score": score + (focus_score * 4),
+                }
+            )
+
+    candidates.sort(
+        key=lambda item: (item["score"], len(item["sentence"])),
+        reverse=True,
+    )
+
+    selected = []
+    sources_used = set()
+    for candidate in candidates:
+        if candidate["source"] in sources_used and len(selected) >= 2:
+            continue
+        selected.append(candidate)
+        sources_used.add(candidate["source"])
+        if len(selected) >= 3:
+            break
+
+    if not selected:
+        fallback = []
+        for chunk_id, chunk in enumerate(retrieved_chunks[:2], start=1):
+            snippet = " ".join(chunk["snippet"].split())
+            fallback.append(f"{snippet[:260].rstrip()} [{chunk_id}]")
+        prefix = "Comparison from the retrieved context: " if _is_comparison_question(question) else "Answer grounded in the retrieved context: "
+        return prefix + " ".join(fallback)
+
+    prefix = "Comparison from the retrieved context: " if _is_comparison_question(question) else "Answer grounded in the retrieved context: "
+    summary = " ".join(
+        f"{candidate['sentence']} [{candidate['chunk_id']}]"
+        for candidate in selected
+    )
+    return prefix + summary
+
+
 def answer_question(question: str, force_rebuild: bool = False) -> dict:
     vector_store, stats = build_vector_store(force_rebuild=force_rebuild)
-    retriever = vector_store.as_retriever(search_kwargs={"k": TOP_K + 2})
-    vector_docs = retriever.invoke(question)
-    keyword_docs = _keyword_retrieve(question, limit=KEYWORD_TOP_K)
-    retrieved_chunks = _merge_retrieved_content(vector_docs, keyword_docs)
+
+    if is_lite_runtime():
+        vector_items = _tfidf_retrieve(question, limit=TOP_K + 2)
+        keyword_docs = _keyword_retrieve(
+            question,
+            limit=2,
+            terms_override=_lite_focus_terms(question),
+        )
+    else:
+        retriever = vector_store.as_retriever(search_kwargs={"k": TOP_K + 2})
+        vector_items = _vector_docs_to_items(retriever.invoke(question))
+        keyword_docs = _keyword_retrieve(question, limit=KEYWORD_TOP_K)
+    retrieved_chunks = _merge_retrieved_content(vector_items, keyword_docs)
 
     if not retrieved_chunks:
         return {
@@ -456,10 +768,11 @@ def answer_question(question: str, force_rebuild: bool = False) -> dict:
             "stats": stats,
         }
 
+    prompt_chunks = _generation_chunks(retrieved_chunks)
     prompt = f"""
-You answer questions only from the provided technical-document context.
-If the answer is not supported by the context, say that clearly.
-Use short, direct language.
+Answer the question using only the provided technical-document context.
+If the answer is not supported by the context, say so clearly.
+Use concise language.
 When you make a claim, cite the supporting chunk numbers like [1] or [2].
 When the question asks for a comparison, compare the items directly and mention both sides if the context supports it.
 
@@ -467,12 +780,16 @@ Question:
 {question}
 
 Context:
-{_format_hybrid_context(retrieved_chunks)}
+{_format_hybrid_context(prompt_chunks)}
 """.strip()
 
-    response = _chat_completion(prompt)
+    response = (
+        _lite_answer_from_chunks(question, prompt_chunks)
+        if is_lite_runtime()
+        else _chat_completion(prompt)
+    )
     sources = []
-    for idx, chunk in enumerate(retrieved_chunks, start=1):
+    for idx, chunk in enumerate(prompt_chunks, start=1):
         sources.append(
             {
                 "id": idx,
@@ -486,6 +803,6 @@ Context:
     return {
         "answer": response,
         "sources": sources,
-        "retrieved_chunks": retrieved_chunks,
+        "retrieved_chunks": prompt_chunks,
         "stats": stats,
     }

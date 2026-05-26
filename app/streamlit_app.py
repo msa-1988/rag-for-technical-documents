@@ -10,10 +10,13 @@ from src.config import (
     APP_ACCESS_PASSWORD,
     APP_SESSION_TIMEOUT_MINUTES,
     APP_SHOW_DETAILED_ERRORS,
+    DEMO_AUTO_FETCH,
     GITHUB_REPO_URL,
     OLLAMA_CHAT_MODEL,
     OLLAMA_EMBEDDING_MODEL,
+    RAG_RUNTIME,
 )
+from src.demo_corpus import download_demo_corpus, list_demo_papers
 from src.pipeline import answer_question, build_vector_store, get_index_status
 
 
@@ -197,22 +200,39 @@ def render_shell() -> None:
 
 
 def render_hero() -> None:
+    if RAG_RUNTIME == "lite":
+        description = (
+            "A public demo over AI music generation papers, tuned for free-tier hosting "
+            "with a lightweight local model and citation-aware retrieval."
+        )
+        badges = [
+            "Free-tier demo",
+            "Hosted mode",
+            "TF-IDF + keyword retrieval",
+            "Grounded citations",
+            "Extractive answer composer",
+        ]
+    else:
+        description = (
+            "A local-first question answering app over AI music generation papers, "
+            "running with Ollama, ChromaDB, and GPU-backed inference on your machine."
+        )
+        badges = [
+            "Local GPU",
+            "Ollama",
+            "Hybrid retrieval",
+            "Grounded citations",
+            f"Chat: {OLLAMA_CHAT_MODEL}",
+            f"Embeddings: {OLLAMA_EMBEDDING_MODEL}",
+        ]
+
+    badge_markup = "".join([f'<span class="badge">{badge}</span>' for badge in badges])
     st.markdown(
         f"""
         <section class="hero">
             <h1>RAG Studio for Public Research Papers</h1>
-            <p>
-                A local-first question answering app over AI music generation papers,
-                running with Ollama, ChromaDB, and GPU-backed inference on your machine.
-            </p>
-            <div class="badge-row">
-                <span class="badge">Local GPU</span>
-                <span class="badge">Ollama</span>
-                <span class="badge">Hybrid Retrieval</span>
-                <span class="badge">Grounded Citations</span>
-                <span class="badge">Chat: {OLLAMA_CHAT_MODEL}</span>
-                <span class="badge">Embeddings: {OLLAMA_EMBEDDING_MODEL}</span>
-            </div>
+            <p>{description}</p>
+            <div class="badge-row">{badge_markup}</div>
         </section>
         """,
         unsafe_allow_html=True,
@@ -281,18 +301,17 @@ def handle_error(exc: Exception) -> None:
     if APP_SHOW_DETAILED_ERRORS:
         st.error(str(exc))
     else:
-        st.error(
-            "The request failed. Check that Ollama is running locally, the models are available, and the index is built."
-        )
+        st.error("The request failed. Confirm the active runtime is available and rebuild the index if needed.")
 
 
-def update_status_from_stats(stats) -> dict[str, int | bool]:
+def update_status_from_stats(stats) -> dict[str, int | bool | str]:
     return {
         "pdf_count": stats.pdf_count,
         "indexed": True,
         "vector_store_ready": True,
         "page_count": stats.page_count,
         "chunk_count": stats.chunk_count,
+        "runtime": RAG_RUNTIME,
     }
 
 
@@ -323,9 +342,12 @@ pdfs = list_input_pdfs()
 render_hero()
 
 if not auth_required():
-    st.info(
-        "Local-only mode is active. For any public sharing, set `APP_ACCESS_PASSWORD` in `.env` first."
-    )
+    if RAG_RUNTIME == "lite":
+        st.info("Hosted demo mode is active. The bundled public corpus can be fetched automatically or with the button below.")
+    else:
+        st.info(
+            "Local-only mode is active. For any public sharing, set `APP_ACCESS_PASSWORD` in `.env` first."
+        )
 elif not session_is_valid():
     render_auth_gate()
     st.stop()
@@ -341,7 +363,11 @@ with metric_cols[3]:
     render_metric_card(
         "Index Health",
         "Ready" if status["indexed"] else "Pending",
-        "Chroma store built" if status["vector_store_ready"] else "Manifest exists but vector store is missing",
+        (
+            "Retrieval artifacts built"
+            if status["vector_store_ready"]
+            else "Index manifest exists but retrieval artifacts are missing"
+        ),
     )
 
 if st.session_state["flash_message"]:
@@ -380,14 +406,28 @@ with left_col:
     with action_col2:
         run_query = st.button("Run RAG Query", type="primary", use_container_width=True)
 
+    if RAG_RUNTIME == "lite":
+        if st.button("Load Bundled Demo Corpus", use_container_width=True):
+            with st.spinner("Downloading the public AI music generation corpus..."):
+                try:
+                    download_demo_corpus(force=False)
+                except Exception as exc:
+                    st.session_state["flash_error"] = (
+                        str(exc) if APP_SHOW_DETAILED_ERRORS else
+                        "Could not download the bundled public corpus."
+                    )
+                else:
+                    st.session_state["flash_message"] = "Bundled public corpus is ready in data/input/music-generation."
+                    st.rerun()
+
     if build_index:
-        with st.spinner("Building vector index from the paper stack..."):
+        with st.spinner("Building retrieval index from the paper stack..."):
             try:
                 _, build_stats = build_vector_store(force_rebuild=True)
             except Exception as exc:
                 st.session_state["flash_error"] = (
                     str(exc) if APP_SHOW_DETAILED_ERRORS else
-                    "Index build failed. Confirm Ollama is running locally and `nomic-embed-text` is installed."
+                    "Index build failed. Confirm the runtime dependencies are available and try again."
                 )
             else:
                 status = update_status_from_stats(build_stats)
@@ -408,7 +448,7 @@ with left_col:
                     st.session_state["flash_error"] = (
                         str(exc)
                         if APP_SHOW_DETAILED_ERRORS
-                        else "Query failed. Check Ollama, rebuild the index if needed, and try again."
+                        else "Query failed. Rebuild the index if needed and confirm the configured runtime is available."
                     )
                     st.rerun()
                 else:
@@ -419,8 +459,9 @@ with left_col:
 
     result = st.session_state["last_result"]
     if result:
-        vector_hits = sum(1 for source in result["sources"] if source["retrieval"] == "vector")
+        vector_hits = sum(1 for source in result["sources"] if source["retrieval"] in {"vector", "tfidf"})
         keyword_hits = sum(1 for source in result["sources"] if source["retrieval"] == "keyword")
+        vector_label = "TF-IDF hits" if RAG_RUNTIME == "lite" else "Vector hits"
 
         st.markdown('<div class="result-card panel-card">', unsafe_allow_html=True)
         tabs = st.tabs(["Answer", "Sources", "Retrieved Context", "Pipeline"])
@@ -431,7 +472,7 @@ with left_col:
             st.markdown("</div>", unsafe_allow_html=True)
             st.markdown(
                 f"""
-                <span class="source-chip">Vector hits: {vector_hits}</span>
+                <span class="source-chip">{vector_label}: {vector_hits}</span>
                 &nbsp;
                 <span class="source-chip warm-chip">Keyword hits: {keyword_hits}</span>
                 """,
@@ -466,17 +507,28 @@ with left_col:
                     st.write(chunk["snippet"])
 
         with tabs[3]:
-            st.markdown(
-                """
-                1. PDFs are loaded from `data/input/` and split into overlapping chunks.
-                2. `nomic-embed-text` converts those chunks into vectors for ChromaDB.
-                3. A user question triggers two retrieval passes:
-                   - vector similarity search
-                   - lightweight keyword retrieval over exported chunks
-                4. The app merges those results with source diversity limits, so one paper does not dominate the context.
-                5. The merged evidence is passed to the local Ollama chat model, which answers with citation tags.
-                """
-            )
+            if RAG_RUNTIME == "lite":
+                st.markdown(
+                    f"""
+                    1. The bundled public corpus is downloaded into `data/input/`.
+                    2. PDFs are split into overlapping chunks.
+                    3. `TF-IDF` retrieval runs over the chunked passages, then a keyword pass boosts named entities.
+                    4. The app merges those results with source diversity limits, so one paper does not dominate the context.
+                    5. A lightweight answer composer turns the retrieved evidence into a cited response for the public demo.
+                    """
+                )
+            else:
+                st.markdown(
+                    f"""
+                    1. PDFs are loaded from `data/input/` and split into overlapping chunks.
+                    2. `{OLLAMA_EMBEDDING_MODEL}` converts those chunks into vectors for ChromaDB.
+                    3. A user question triggers two retrieval passes:
+                       - vector similarity search
+                       - lightweight keyword retrieval over exported chunks
+                    4. The app merges those results with source diversity limits, so one paper does not dominate the context.
+                    5. `{OLLAMA_CHAT_MODEL}` generates the final answer from the retrieved evidence and cites chunk numbers.
+                    """
+                )
 
         st.markdown("</div>", unsafe_allow_html=True)
     else:
@@ -499,8 +551,8 @@ with right_col:
         <div class="panel-card">
             <h3>Runtime and Retrieval</h3>
             <p class="subtle">
-                Local GPU-backed inference with Ollama, plus a hybrid retrieval layer designed
-                to help named entities like model names surface more reliably.
+                The app supports a high-fidelity local Ollama runtime and a lighter hosted mode
+                tuned for free-tier public demos.
             </p>
         </div>
         """,
@@ -522,9 +574,15 @@ with right_col:
         unsafe_allow_html=True,
     )
     st.markdown(f"- Index ready: `{status['indexed']}`")
-    st.markdown(f"- Vector store ready: `{status['vector_store_ready']}`")
-    st.markdown(f"- Chat model: `{OLLAMA_CHAT_MODEL}`")
-    st.markdown(f"- Embedding model: `{OLLAMA_EMBEDDING_MODEL}`")
+    st.markdown(f"- Runtime: `{status['runtime']}`")
+    st.markdown(f"- Retrieval artifacts ready: `{status['vector_store_ready']}`")
+    if RAG_RUNTIME == "lite":
+        st.markdown(f"- Demo corpus auto-fetch: `{DEMO_AUTO_FETCH}`")
+        st.markdown("- Answer mode: `extractive synthesis with citations`")
+        st.markdown("- Retrieval model: `scikit-learn TF-IDF + keyword fallback`")
+    else:
+        st.markdown(f"- Chat model: `{OLLAMA_CHAT_MODEL}`")
+        st.markdown(f"- Embedding model: `{OLLAMA_EMBEDDING_MODEL}`")
     st.markdown(f"- Repository: [rag-for-technical-documents]({GITHUB_REPO_URL})")
 
     st.markdown(
@@ -541,6 +599,10 @@ with right_col:
             st.markdown(f"- `{name}`")
     else:
         st.warning("No PDFs found yet in `data/input/`.")
+        if RAG_RUNTIME == "lite":
+            st.markdown("Bundled papers:")
+            for paper in list_demo_papers():
+                st.markdown(f"- [{paper['title']}]({paper['pdf_url']})")
 
     st.markdown(
         """
@@ -549,14 +611,19 @@ with right_col:
             <ul class="helper-list">
                 <li>Ask a definition question and verify the citations.</li>
                 <li>Ask a comparison question and confirm at least two papers appear.</li>
-                <li>Check that both vector and keyword retrieval show up for named entities.</li>
-                <li>Use <code>ollama ps</code> to confirm the chat model is still on GPU.</li>
+                <li>Check that both retrieval signals show up for named entities.</li>
+                <li>In local mode, use <code>ollama ps</code> to confirm the chat model is still on GPU.</li>
             </ul>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-st.caption(
-    "This app is intended to run on localhost by default. If you share it publicly, keep password protection enabled and stop the tunnel as soon as the demo is over."
-)
+if RAG_RUNTIME == "lite":
+    st.caption(
+        "Hosted demo mode is designed for free-tier public sharing. It uses a smaller local model and may wake from sleep on first visit."
+    )
+else:
+    st.caption(
+        "This app is intended to run on localhost by default. If you share it publicly, keep password protection enabled and stop the tunnel as soon as the demo is over."
+    )

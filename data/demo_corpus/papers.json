@@ -1,0 +1,38 @@
+[
+  {
+    "slug": "survey-ai-music-generation-tools-and-models",
+    "filename": "01_survey_ai_music_generation_tools_and_models.pdf",
+    "title": "A Survey of AI Music Generation Tools and Models",
+    "pdf_url": "https://arxiv.org/pdf/2308.12982.pdf"
+  },
+  {
+    "slug": "applications-and-advances-of-ai-in-music-generation",
+    "filename": "02_review_ai_music_generation_2024.pdf",
+    "title": "Applications and Advances of Artificial Intelligence in Music Generation: A Review",
+    "pdf_url": "https://arxiv.org/pdf/2409.03715.pdf"
+  },
+  {
+    "slug": "musiclm-generating-music-from-text",
+    "filename": "03_musiclm_generating_music_from_text.pdf",
+    "title": "MusicLM: Generating Music From Text",
+    "pdf_url": "https://arxiv.org/pdf/2301.11325.pdf"
+  },
+  {
+    "slug": "simple-and-controllable-music-generation",
+    "filename": "04_musicgen_simple_and_controllable_music_generation.pdf",
+    "title": "Simple and Controllable Music Generation",
+    "pdf_url": "https://arxiv.org/pdf/2306.05284.pdf"
+  },
+  {
+    "slug": "controllable-music-production-with-diffusion-models",
+    "filename": "05_controllable_music_production_diffusion.pdf",
+    "title": "Controllable Music Production with Diffusion Models and Guidance Gradients",
+    "pdf_url": "https://arxiv.org/pdf/2311.00613.pdf"
+  },
+  {
+    "slug": "fast-timing-conditioned-latent-audio-diffusion",
+    "filename": "06_fast_timing_conditioned_latent_audio_diffusion.pdf",
+    "title": "Fast Timing-Conditioned Latent Audio Diffusion",
+    "pdf_url": "https://arxiv.org/pdf/2402.04825.pdf"
+  }
+]

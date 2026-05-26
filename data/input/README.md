@@ -1,15 +1,11 @@
-Put your source PDFs here for version 1.
+Put the source PDF corpus here.
 
-Recommended first files:
-- recent papers
-- technical deliverables
-- proposal or report PDFs
-
-Keep the first version small:
-- `2 to 4` PDFs is enough for day 1
-
-Subfolders are supported.
+Guidelines:
+- keep the first dataset focused and small
+- subfolders are supported
+- public deployments can use the bundled AI music generation corpus
 
 Example topic folders:
 - `music-generation/`
 - `urban-digital-twins/`
+- `technical-reports/`

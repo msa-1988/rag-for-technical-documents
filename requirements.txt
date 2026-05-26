@@ -7,3 +7,6 @@ chromadb>=1.0.0
 pypdf>=5.0.0
 python-dotenv>=1.0.0
 requests>=2.32.0
+scikit-learn>=1.6.0
+scipy>=1.15.0
+joblib>=1.4.0
