@@ -59,9 +59,9 @@ Copy `2-4` PDFs into:
 `data/input/`
 
 Best first set:
-- one recent paper
-- one deliverable
-- one profile or CV document
+- one survey paper
+- one model paper
+- one review or comparison paper
 
 Keep the first test set small.
 
@@ -109,43 +109,26 @@ git remote add origin <your-new-repo-url>
 git push -u origin main
 ```
 
-## 8. Deploy publicly
+## 8. Share safely
 
-Fastest option: `Streamlit Community Cloud`
+For this local-first version:
+- safest default is local-only
+- public sharing should be temporary and password-protected
 
-Basic flow:
-1. push repo to GitHub
-2. create a new app in Streamlit Cloud
-3. point it to `app/streamlit_app.py`
-4. add secrets:
-   - `OLLAMA_BASE_URL`
-   - `OLLAMA_CHAT_MODEL`
-   - `OLLAMA_EMBEDDING_MODEL`
-5. deploy
-
-Note:
-For a public cloud deployment, a pure local Ollama setup will not work unless you also host Ollama somewhere reachable.
-So for day 1, focus first on:
-- local GPU demo
-- GitHub repo
-- screenshots
-- architecture notes
-
-Public deployment can come in step 2 using:
-- a self-hosted Ollama service
-- Azure
-- another hosted inference endpoint
+Safe flow:
+1. push the repo to GitHub
+2. set `APP_ACCESS_PASSWORD` in `.env`
+3. run `./scripts/start_secure_public_demo.sh`
+4. share the temporary URL only for the demo window
+5. stop the tunnel immediately after use
 
 ## 9. Publish the project
 
-After deployment:
-- add the repo to your pinned GitHub projects
-- add the live link to LinkedIn Featured
-- write one LinkedIn post:
-  - what problem you solved
-  - what stack you used
-  - what you learned
-  - link to GitHub
+After the project is working:
+- keep the GitHub repo clean
+- add screenshots
+- write a short project summary
+- share the GitHub link when needed
 
 ## 10. Upgrade after day 1
 

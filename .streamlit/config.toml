@@ -1,0 +1,12 @@
+[server]
+headless = true
+address = "127.0.0.1"
+port = 8501
+enableCORS = true
+enableXsrfProtection = true
+maxUploadSize = 25
+maxMessageSize = 25
+
+[browser]
+serverAddress = "localhost"
+gatherUsageStats = false

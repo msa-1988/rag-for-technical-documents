@@ -105,7 +105,7 @@ OLLAMA_CHAT_MODEL=phi4-mini
 
 Use that only after the base app is working.
 
-## CV / LinkedIn framing
+## Resume / profile framing
 
 A good way to describe this project later:
 

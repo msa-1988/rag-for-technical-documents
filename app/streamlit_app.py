@@ -1,10 +1,19 @@
 """Streamlit UI for the local-first RAG demo."""
 
+import hmac
+import time
 from pathlib import Path
 
 import streamlit as st
 
-from src.config import OLLAMA_CHAT_MODEL, OLLAMA_EMBEDDING_MODEL
+from src.config import (
+    APP_ACCESS_PASSWORD,
+    APP_SESSION_TIMEOUT_MINUTES,
+    APP_SHOW_DETAILED_ERRORS,
+    GITHUB_REPO_URL,
+    OLLAMA_CHAT_MODEL,
+    OLLAMA_EMBEDDING_MODEL,
+)
 from src.pipeline import answer_question, build_vector_store, get_index_status
 
 
@@ -223,6 +232,60 @@ def render_metric_card(label: str, value: str, note: str) -> None:
     )
 
 
+def auth_required() -> bool:
+    return bool(APP_ACCESS_PASSWORD)
+
+
+def session_is_valid() -> bool:
+    if not auth_required():
+        return True
+
+    authenticated = st.session_state.get("authenticated", False)
+    if not authenticated:
+        return False
+
+    last_seen = st.session_state.get("last_seen_at", 0.0)
+    if time.time() - last_seen > APP_SESSION_TIMEOUT_MINUTES * 60:
+        st.session_state["authenticated"] = False
+        st.session_state["last_seen_at"] = 0.0
+        st.session_state["flash_error"] = "Session expired. Enter the access password again."
+        return False
+
+    st.session_state["last_seen_at"] = time.time()
+    return True
+
+
+def render_auth_gate() -> None:
+    st.markdown(
+        """
+        <div class="panel-card">
+            <h3>Protected Demo</h3>
+            <p class="subtle">
+                This app is password-gated before public sharing. Enter the access password to use the interface.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    password = st.text_input("Access password", type="password")
+    if st.button("Unlock app", type="primary", use_container_width=True):
+        if hmac.compare_digest(password, APP_ACCESS_PASSWORD):
+            st.session_state["authenticated"] = True
+            st.session_state["last_seen_at"] = time.time()
+            st.rerun()
+        else:
+            st.error("Wrong password.")
+
+
+def handle_error(exc: Exception) -> None:
+    if APP_SHOW_DETAILED_ERRORS:
+        st.error(str(exc))
+    else:
+        st.error(
+            "The request failed. Check that Ollama is running locally, the models are available, and the index is built."
+        )
+
+
 def update_status_from_stats(stats) -> dict[str, int | bool]:
     return {
         "pdf_count": stats.pdf_count,
@@ -238,6 +301,8 @@ def init_state() -> None:
     st.session_state.setdefault("last_result", None)
     st.session_state.setdefault("flash_message", None)
     st.session_state.setdefault("flash_error", None)
+    st.session_state.setdefault("authenticated", False)
+    st.session_state.setdefault("last_seen_at", 0.0)
 
 
 def set_question(prompt: str) -> None:
@@ -256,6 +321,14 @@ status = get_index_status()
 pdfs = list_input_pdfs()
 
 render_hero()
+
+if not auth_required():
+    st.info(
+        "Local-only mode is active. For any public sharing, set `APP_ACCESS_PASSWORD` in `.env` first."
+    )
+elif not session_is_valid():
+    render_auth_gate()
+    st.stop()
 
 metric_cols = st.columns(4)
 with metric_cols[0]:
@@ -312,7 +385,10 @@ with left_col:
             try:
                 _, build_stats = build_vector_store(force_rebuild=True)
             except Exception as exc:
-                st.session_state["flash_error"] = str(exc)
+                st.session_state["flash_error"] = (
+                    str(exc) if APP_SHOW_DETAILED_ERRORS else
+                    "Index build failed. Confirm Ollama is running locally and `nomic-embed-text` is installed."
+                )
             else:
                 status = update_status_from_stats(build_stats)
                 st.session_state["flash_message"] = (
@@ -329,7 +405,11 @@ with left_col:
                 try:
                     result = answer_question(question)
                 except Exception as exc:
-                    st.session_state["flash_error"] = str(exc)
+                    st.session_state["flash_error"] = (
+                        str(exc)
+                        if APP_SHOW_DETAILED_ERRORS
+                        else "Query failed. Check Ollama, rebuild the index if needed, and try again."
+                    )
                     st.rerun()
                 else:
                     st.session_state["last_result"] = result
@@ -427,6 +507,12 @@ with right_col:
         unsafe_allow_html=True,
     )
 
+    if auth_required():
+        if st.button("Lock session", use_container_width=True):
+            st.session_state["authenticated"] = False
+            st.session_state["last_seen_at"] = 0.0
+            st.rerun()
+
     st.markdown(
         """
         <div class="panel-card">
@@ -439,6 +525,7 @@ with right_col:
     st.markdown(f"- Vector store ready: `{status['vector_store_ready']}`")
     st.markdown(f"- Chat model: `{OLLAMA_CHAT_MODEL}`")
     st.markdown(f"- Embedding model: `{OLLAMA_EMBEDDING_MODEL}`")
+    st.markdown(f"- Repository: [rag-for-technical-documents]({GITHUB_REPO_URL})")
 
     st.markdown(
         """
@@ -471,5 +558,5 @@ with right_col:
     )
 
 st.caption(
-    "For a public hosted version later, keep this local GPU app as the reference implementation and add a hosted inference layer as phase two."
+    "This app is intended to run on localhost by default. If you share it publicly, keep password protection enabled and stop the tunnel as soon as the demo is over."
 )

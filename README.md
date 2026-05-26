@@ -1,54 +1,46 @@
 # 01 - RAG for Technical Documents
 
-This is the first project in the `Learning and building AI skills` roadmap.
+GitHub URL: `https://github.com/msa-1988/rag-for-technical-documents`
 
 ## Goal
 
-Build a compact, deployable `RAG` application that can read technical PDFs and answer questions with citations.
+Build a compact `RAG` application that reads public research PDFs and answers questions with grounded citations.
 
-The main purpose of this project is to:
-- learn the core RAG stack fast
-- produce a real GitHub project
-- create something demo-able for LinkedIn and interviews
+The current demo corpus is a public `AI music generation` paper set.
 
-## Why This Project Is First
+## Description
 
-This is the best first project because it gives you:
-- GenAI application experience
-- document intelligence experience
-- retrieval and grounding fundamentals
-- a fast path to deployment
-- a strong portfolio story
+This project demonstrates:
+- local-first RAG with `Ollama`
+- GPU-backed inference
+- hybrid retrieval over technical papers
+- grounded answers with visible evidence
+- a simple Streamlit interface for exploration and demos
 
-## Suggested Project Use Case
+It is designed to be:
+- public and safe to share
+- independent from paid APIs
+- easy to run locally
+- useful as a learning and interview project
 
-Use a public, creative topic first:
-- AI music generation papers
-- open arXiv PDFs
-- model papers + review papers
+## Utilisation
 
-That makes the app:
-- public and easy to share
-- more interesting to recruiters
-- easier to demo on GitHub and LinkedIn
-- safe to publish without personal documents
+The app lets you:
+- index a small PDF collection from `data/input/`
+- ask natural-language questions
+- inspect answer citations
+- inspect retrieved context
+- compare model papers and survey papers in one place
 
-## One-Day MVP Deliverables
+Typical usage:
 
-By the end of the first build day, the MVP should do this:
+1. put public PDFs into `data/input/`
+2. build or refresh the index
+3. ask technical questions
+4. review the answer, sources, and retrieved context
+5. stop the app when you are done
 
-1. ingest PDFs
-2. split them into chunks
-3. create embeddings
-4. store them in a vector database
-5. accept a user question
-6. retrieve relevant chunks with hybrid retrieval
-7. generate an answer with citations
-8. run through a simple web UI
-9. be pushed to GitHub
-10. be deployable publicly
-
-## Suggested Stack
+## Stack
 
 - `Python`
 - `Streamlit`
@@ -59,7 +51,7 @@ By the end of the first build day, the MVP should do this:
 - `ChromaDB`
 - `PyPDF`
 
-## Current Retrieval Design
+## Retrieval Design
 
 This version uses:
 - semantic retrieval from `ChromaDB`
@@ -68,7 +60,7 @@ This version uses:
 
 That hybrid design was added after real testing showed that exact model-name comparison questions needed stronger lexical support.
 
-## Quick Start
+## Safe Local Run
 
 ```bash
 python3 -m venv .venv
@@ -76,8 +68,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 ollama pull nomic-embed-text
-ollama ps
-streamlit run app/streamlit_app.py
+./scripts/check_ollama_gpu.sh
+./scripts/run_safe_local.sh
 ```
 
 Then:
@@ -87,26 +79,29 @@ Then:
 - click `Build / Refresh Index`
 - ask real questions from the paper set
 
-GPU note:
-- Ollama automatically uses the GPU when available
-- this machine has already been verified with `phi3:mini` running at `100% GPU`
-- use `ollama ps` to confirm the active processor at any time
+## Secure Public Demo
 
-Optional local chat model upgrades:
-- `ollama pull qwen2.5:3b-instruct`
-- `ollama pull phi4-mini`
+This repo is `localhost-only` by default.
 
-## Public Demo Path
+If you need a temporary public demo:
 
-For this local-first version:
-- best day-1 target is a `public tunnel` to the local Streamlit app
-- best phase-2 target is a hosted inference deployment
+1. set a real `APP_ACCESS_PASSWORD` in `.env`
+2. keep the app bound to `127.0.0.1`
+3. start the guarded tunnel script:
 
-Later, you can:
-- deploy a better version on `Azure`
-- containerize it
-- convert it into an API service
-- add a second provider later if you want a provider-agnostic version
+```bash
+./scripts/start_secure_public_demo.sh
+```
+
+That script refuses to start a public tunnel unless a password is configured.
+
+## Security Notes
+
+- no personal PDFs are included in the repository
+- `data/input/` is git-ignored
+- the app binds to `localhost` by default via `.streamlit/config.toml`
+- public sharing should be temporary and password-protected
+- stop any demo tunnel immediately after use
 
 ## Repo Structure
 
@@ -120,6 +115,7 @@ Later, you can:
   - `TOPIC_MUSIC_GENERATION.md`
   - `PIPELINE_INTERVIEW_GUIDE.md`
   - `PUBLIC_TUNNEL_DEPLOYMENT.md`
+  - `SECURITY_HARDENING.md`
 - `app/`
   - `streamlit_app.py`
   - `src/`
@@ -128,6 +124,8 @@ Later, you can:
 - `scripts/`
   - `check_ollama_gpu.sh`
   - `smoke_test_pipeline.py`
+  - `run_safe_local.sh`
+  - `start_secure_public_demo.sh`
 - `requirements.txt`
 - `.env.example`
 - `.gitignore`
@@ -142,12 +140,12 @@ python3 scripts/smoke_test_pipeline.py
 ## Definition of Done
 
 The project is good enough to publish when:
-- the app answers questions using uploaded PDFs
+- the app answers questions using public PDFs
 - the answer shows source chunks or citations
 - the README explains architecture and setup
 - the repo has screenshots or demo output
 - the repo is pushed to GitHub
-- the app is publicly accessible
+- any public demo is temporary and password-protected
 
 ## Next Step
 
@@ -160,3 +158,4 @@ Read the files in `docs/` in this order:
 5. `STEP_BY_STEP.md`
 6. `LOCAL_OLLAMA_SETUP.md`
 7. `PIPELINE_INTERVIEW_GUIDE.md`
+8. `SECURITY_HARDENING.md`
