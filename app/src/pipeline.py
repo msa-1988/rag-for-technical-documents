@@ -8,6 +8,7 @@ import shutil
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import joblib
 from dotenv import load_dotenv
@@ -17,11 +18,6 @@ import requests
 from scipy.sparse import load_npz, save_npz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
-
-try:
-    from langchain_chroma import Chroma
-except ImportError:
-    from langchain_community.vectorstores import Chroma
 
 from .config import (
     CHUNK_EXPORT_PATH,
@@ -46,6 +42,14 @@ from .config import (
     VECTOR_DB_DIR,
 )
 from .demo_corpus import download_demo_corpus
+
+
+Chroma: Any = None
+if RAG_RUNTIME != "lite":
+    try:
+        from langchain_chroma import Chroma
+    except ImportError:
+        from langchain_community.vectorstores import Chroma
 
 
 load_dotenv(PROJECT_ROOT / ".env")
@@ -99,6 +103,15 @@ class OllamaEmbeddings:
             batch = texts[start : start + EMBED_BATCH_SIZE]
             embeddings.extend(self._embed(batch))
         return embeddings
+
+
+def _require_chroma() -> Any:
+    if Chroma is None:
+        raise RuntimeError(
+            "Chroma is not available in the current runtime. "
+            "Use `RAG_RUNTIME=ollama` for the vector-store path."
+        )
+    return Chroma
 
     def embed_query(self, text: str) -> list[float]:
         return self._embed([text])[0]
@@ -272,7 +285,8 @@ def split_documents(documents: list) -> list:
 
 
 def _load_existing_vector_store() -> Chroma:
-    return Chroma(
+    chroma_cls = _require_chroma()
+    return chroma_cls(
         collection_name="technical_documents",
         persist_directory=str(VECTOR_DB_DIR),
         embedding_function=_embedding_client(),
@@ -352,7 +366,8 @@ def build_vector_store(force_rebuild: bool = False) -> tuple[Chroma | None, Inde
     if VECTOR_DB_DIR.exists():
         shutil.rmtree(VECTOR_DB_DIR)
 
-    vector_store = Chroma.from_documents(
+    chroma_cls = _require_chroma()
+    vector_store = chroma_cls.from_documents(
         documents=chunks,
         embedding=_embedding_client(),
         collection_name="technical_documents",
