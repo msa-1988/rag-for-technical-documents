@@ -288,7 +288,7 @@ def render_auth_gate() -> None:
         unsafe_allow_html=True,
     )
     password = st.text_input("Access password", type="password")
-    if st.button("Unlock app", type="primary", use_container_width=True):
+    if st.button("Unlock app", type="primary", width="stretch"):
         if hmac.compare_digest(password, APP_ACCESS_PASSWORD):
             st.session_state["authenticated"] = True
             st.session_state["last_seen_at"] = time.time()
@@ -389,7 +389,7 @@ with left_col:
     for idx, prompt in enumerate(SAMPLE_QUESTIONS):
         target_col = prompt_cols[idx % 2]
         with target_col:
-            if st.button(prompt, key=f"sample_{idx}", use_container_width=True):
+            if st.button(prompt, key=f"sample_{idx}", width="stretch"):
                 set_question(prompt)
                 st.rerun()
 
@@ -402,12 +402,12 @@ with left_col:
 
     action_col1, action_col2 = st.columns(2)
     with action_col1:
-        build_index = st.button("Build / Refresh Index", use_container_width=True)
+        build_index = st.button("Build / Refresh Index", width="stretch")
     with action_col2:
-        run_query = st.button("Run RAG Query", type="primary", use_container_width=True)
+        run_query = st.button("Run RAG Query", type="primary", width="stretch")
 
     if RAG_RUNTIME == "lite":
-        if st.button("Load Bundled Demo Corpus", use_container_width=True):
+        if st.button("Load Bundled Demo Corpus", width="stretch"):
             with st.spinner("Downloading the public AI music generation corpus..."):
                 try:
                     download_demo_corpus(force=False)
@@ -560,7 +560,7 @@ with right_col:
     )
 
     if auth_required():
-        if st.button("Lock session", use_container_width=True):
+        if st.button("Lock session", width="stretch"):
             st.session_state["authenticated"] = False
             st.session_state["last_seen_at"] = 0.0
             st.rerun()

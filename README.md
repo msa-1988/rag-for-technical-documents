@@ -8,6 +8,36 @@ This project is a retrieval-augmented question answering application for public 
 
 The default demo corpus is a public `AI music generation` paper set, but the application is designed for any small technical-document collection.
 
+## Interface Preview
+
+### Hero and product framing
+
+![Hero section](screenshots/hero-section.png)
+
+### Question Studio
+
+This is the main operator view: sample prompts, indexed-paper metrics, the current paper stack, and the controls to refresh the index or run a grounded query.
+
+![Question Studio](screenshots/question-studio.png)
+
+### Answer view
+
+The answer panel shows a cited response with retrieval-signal badges, keeping the generated output visibly tied to the retrieved evidence.
+
+![Answer view](screenshots/answer-view.png)
+
+### Sources view
+
+Each cited chunk can be inspected directly, including the source PDF, page number, retrieval path, and snippet that supported the answer.
+
+![Sources view](screenshots/sources-view.png)
+
+### Pipeline view
+
+The pipeline tab makes the runtime behavior legible for demos and interviews by describing how the hosted and local modes assemble grounded answers.
+
+![Pipeline view](screenshots/pipeline-view.png)
+
 ## Features
 
 - local high-fidelity runtime with `Ollama`
@@ -99,9 +129,11 @@ The project supports two public-sharing paths:
 - `Streamlit Community Cloud` for a durable free-tier demo using `RAG_RUNTIME=lite`
 - a password-protected local tunnel for short-lived private demos from your own machine
 
-Live Streamlit deployment:
+Configured Streamlit deployment URL:
 
 - `https://rag-for-technical-documents-ad2b7s6o2njvumzteywaca.streamlit.app/`
+
+Before sharing the hosted link publicly, confirm the Streamlit Community Cloud visibility setting allows anonymous access.
 
 If you need the short-lived local demo path:
 
